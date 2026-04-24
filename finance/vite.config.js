@@ -11,11 +11,32 @@ export default defineConfig({
     },
   },
   server: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'unsafe-none',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+    },
+    cors: true,
     proxy: {
       '/api': {
         target: 'http://localhost:5000', // backend URL
         changeOrigin: true,
         secure: false,
+      },
+    },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'unsafe-none',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none',
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'google-oauth': ['@react-oauth/google'],
+        },
       },
     },
   },

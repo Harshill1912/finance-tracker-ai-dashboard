@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:5000/api'; // Replace with your actual backend URL
+const API_BASE_URL = import.meta.env.VITE_API_URL // Replace with your actual backend URL
 
 export const budgetService = {
   async createSplitExpense(splitExpense) {

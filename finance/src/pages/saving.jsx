@@ -38,7 +38,6 @@ const Index = () => {
   
   const getStockPrice = async (symbol) => {
     if (!apiKey) {
-     console.log("Api Key is Missing")
       return null;
     }
 
@@ -83,7 +82,6 @@ const Index = () => {
       }
     }
 
-    console.log(`Mutual Fund Error: Could not find NAV for "${symbol}"`);
     return null;
   } catch (error) {
     console.error('Error fetching mutual fund NAV:', error);

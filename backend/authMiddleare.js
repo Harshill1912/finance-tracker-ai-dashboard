@@ -10,7 +10,16 @@ const auth = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // Attach decoded info to the request object
+    // Ensure user ID is always available (support both 'id' and '_id' formats)
+    if (!decoded.id && !decoded._id) {
+      return res.status(401).json({ message: 'Invalid token: user ID not found' });
+    }
+    // Normalize user ID to always use 'id'
+    req.user = {
+      ...decoded,
+      id: decoded.id || decoded._id,
+      _id: decoded._id || decoded.id
+    };
     next();  // Move to the next middleware or route handler
   } catch (err) {
     return res.status(401).json({ message: 'Invalid token' });

@@ -7,11 +7,12 @@ const router = express.Router();
 // Example protected route
 router.get('/dashboard', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select('-password');
+    const userId = req.user.id || req.user._id;
+    const user = await User.findById(userId).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.json({ message: `Welcome, ${user.name}`, user });
-  } catch (err) {a
+  } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
 });

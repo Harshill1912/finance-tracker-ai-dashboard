@@ -74,23 +74,40 @@ function Ai() {
     setLoading(true);
     setResponse("");
 
-    const requestBody = {
-      model: "command",
-      prompt: userQuestion,
-      max_tokens: 500,
-      temperature: 0.8,
-    };
-
     try {
-      const res = await axios.post(COHERE_API_URL, requestBody, {
-        headers: {
-          Authorization: `Bearer ${API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      });
+      const token = localStorage.getItem('token');
+      
+      // Check for local backend first
+      const localUrl = 'http://localhost:5000';
+      const deployedUrl = import.meta.env.VITE_API_URL || 'https://finance-tracker-ai-dashboard.onrender.com';
+      
+      let useLocal = false;
+      try {
+        const testRes = await axios.get(`${localUrl}/api/test`, { timeout: 2000 });
+        if (testRes.data) {
+          useLocal = true;
+        }
+      } catch (e) {
+        // Local not available
+      }
+      
+      const baseUrl = useLocal ? localUrl : deployedUrl;
+      
+      // Use backend API for context-aware responses
+      const res = await axios.post(
+        `${baseUrl}/api/ai/chat`,
+        { question: userQuestion },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: useLocal ? 8000 : 20000,
+        }
+      );
 
-      if (res.data?.generations?.[0]?.text) {
-        const aiText = res.data.generations[0].text.trim();
+      if (res.data?.response) {
+        const aiText = res.data.response.trim();
         let i = 0;
         const typeEffect = () => {
           if (i < aiText.length) {
@@ -101,11 +118,64 @@ function Ai() {
         };
         typeEffect();
       } else {
-        setResponse("❌ No valid response from Cohere.");
+        // Fallback to direct Cohere API if backend fails
+        if (API_KEY) {
+          const requestBody = {
+            model: "command",
+            prompt: `You are a financial advisor. Answer this question: ${userQuestion}`,
+            max_tokens: 500,
+            temperature: 0.8,
+          };
+
+          const cohereRes = await axios.post(COHERE_API_URL, requestBody, {
+            headers: {
+              Authorization: `Bearer ${API_KEY}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (cohereRes.data?.generations?.[0]?.text) {
+            const aiText = cohereRes.data.generations[0].text.trim();
+            setResponse(aiText);
+          } else {
+            setResponse("❌ No valid response from AI service.");
+          }
+        } else {
+          setResponse("❌ AI service is not configured. Please check your API keys.");
+        }
       }
     } catch (err) {
-      console.error(err);
-      setResponse("❌ Failed to fetch response from Cohere.");
+      console.error('AI Error:', err);
+      
+      // Fallback to direct Cohere if backend fails
+      if (API_KEY) {
+        try {
+          const requestBody = {
+            model: "command",
+            prompt: `You are a financial advisor. Answer this question: ${userQuestion}`,
+            max_tokens: 500,
+            temperature: 0.8,
+          };
+
+          const cohereRes = await axios.post(COHERE_API_URL, requestBody, {
+            headers: {
+              Authorization: `Bearer ${API_KEY}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (cohereRes.data?.generations?.[0]?.text) {
+            const aiText = cohereRes.data.generations[0].text.trim();
+            setResponse(aiText);
+          } else {
+            setResponse("❌ Failed to get AI response. Please try again.");
+          }
+        } catch (fallbackErr) {
+          setResponse("❌ Failed to fetch response. Please check your connection and try again.");
+        }
+      } else {
+        setResponse("❌ AI service is not available. Please configure your API keys.");
+      }
     }
 
     setLoading(false);
