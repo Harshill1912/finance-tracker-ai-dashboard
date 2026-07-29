@@ -57,16 +57,27 @@ const AIChatbotNew = () => {
     }
   ];
 
-  // Get Base URL
+  // Get Base URL with candidate fallbacks
   const getBaseUrl = async () => {
     const localUrl = 'http://localhost:5000';
-    const deployedUrl = import.meta.env.VITE_API_URL || 'https://finance-tracker-ai-dashboard.onrender.com';
+    const envUrl = import.meta.env.VITE_API_URL;
+    const defaultDeployed = 'https://finance-tracker-ai-dashboard.onrender.com';
+    
+    // First try local backend if accessible
     try {
-      await axios.get(`${localUrl}/api/test`, { timeout: 2000 });
+      await axios.get(`${localUrl}/api/test`, { timeout: 1500 });
       return localUrl;
-    } catch (e) {
-      return deployedUrl;
+    } catch (e) {}
+
+    // Next try environment configured VITE_API_URL
+    if (envUrl) {
+      try {
+        await axios.get(`${envUrl}/api/test`, { timeout: 2000 });
+        return envUrl;
+      } catch (e) {}
     }
+
+    return defaultDeployed;
   };
 
   // Scroll to bottom
@@ -103,17 +114,38 @@ const AIChatbotNew = () => {
       }
 
       const baseUrl = await getBaseUrl();
-      const res = await axios.post(
-        `${baseUrl}/api/ai/chat`,
-        { question: questionText },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 30000
-        }
-      );
+      let res;
+      try {
+        res = await axios.post(
+          `${baseUrl}/api/ai/chat`,
+          { question: questionText },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 30000
+          }
+        );
+      } catch (primaryErr) {
+        console.warn('Primary backend request failed, attempting fallback endpoint...', primaryErr.message);
+        // Fallback retry with local server if primary was remote or vice versa
+        const fallbackUrl = baseUrl.includes('localhost')
+          ? (import.meta.env.VITE_API_URL || 'https://finance-tracker-ai-dashboard.onrender.com')
+          : 'http://localhost:5000';
+          
+        res = await axios.post(
+          `${fallbackUrl}/api/ai/chat`,
+          { question: questionText },
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 30000
+          }
+        );
+      }
 
       // Add assistant response
       const assistantMessage = {
@@ -124,13 +156,14 @@ const AIChatbotNew = () => {
       setMessages(prev => [...prev, assistantMessage]);
     } catch (error) {
       console.error('Chat error:', error);
+      const serverMsg = error.response?.data?.response || error.response?.data?.message;
       const errorMessage = {
         role: 'assistant',
-        content: error.response?.data?.response || 'Sorry, I encountered an error. Please check your connection and try again.',
+        content: serverMsg || 'I apologize for the inconvenience. I am having trouble connecting to the server right now. Please ensure the backend server is running and try again.',
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
-      toast.error('Failed to get response from AI');
+      toast.error('Unable to reach AI server');
     } finally {
       setLoading(false);
       inputRef.current?.focus();

@@ -1,89 +1,140 @@
 const axios = require('axios');
 
-// Alpha Vantage API for stock prices
-const getStockPrice = async (symbol) => {
-  const apiKey = process.env.ALPHA_VANTAGE_API_KEY || '872XM08JT8P7M8S1';
-  
-  if (!apiKey || !symbol) {
-    return null;
-  }
-
-  try {
-    const response = await axios.get(
-      `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${apiKey}`,
-      { timeout: 10000 }
-    );
-
-    const data = response.data;
-    
-    if (data['Global Quote'] && data['Global Quote']['05. price']) {
-      return {
-        price: parseFloat(data['Global Quote']['05. price']),
-        change: parseFloat(data['Global Quote']['09. change'] || 0),
-        changePercent: parseFloat(data['Global Quote']['10. change percent']?.replace('%', '') || 0),
-        lastUpdated: new Date()
-      };
-    } else if (data['Error Message']) {
-      console.error('Alpha Vantage API Error:', data['Error Message']);
-      return null;
-    } else if (data['Note']) {
-      // API rate limit
-      console.warn('Alpha Vantage API rate limit reached');
-      return null;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error fetching stock price:', error.message);
-    return null;
-  }
-};
-
-// Indian Stock Exchange (NSE/BSE) - Alternative using Yahoo Finance API
-const getIndianStockPrice = async (symbol) => {
-  try {
-    // For Indian stocks, try Yahoo Finance API
-    // Format: RELIANCE.NS for NSE, RELIANCE.BO for BSE
-    const nseSymbol = `${symbol}.NS`;
-    const response = await axios.get(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${nseSymbol}`,
-      { 
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0'
-        }
-      }
-    );
-
-    if (response.data?.chart?.result?.[0]?.meta) {
-      const meta = response.data.chart.result[0].meta;
-      return {
-        price: meta.regularMarketPrice || meta.previousClose,
-        change: meta.regularMarketPrice - meta.previousClose,
-        changePercent: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100,
-        lastUpdated: new Date(meta.regularMarketTime * 1000)
-      };
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('Error fetching Indian stock price:', error.message);
-    return null;
-  }
-};
-
-// Get stock price (tries both APIs)
+/**
+ * Fetch stock price using Yahoo Finance API with candidate symbol resolution
+ * Handles Indian stocks (NSE .NS, BSE .BO / .BSE) and US/Global stocks.
+ * 
+ * @param {string} symbol - Ticker symbol (e.g. ADANIGREEN.BSE, RELIANCE.NS, AAPL, TCS)
+ * @returns {Promise<{price: number, change: number, changePercent: number, symbol: string, originalSymbol: string, currency: string, exchange: string, lastUpdated: Date}|null>}
+ */
 const fetchStockPrice = async (symbol) => {
-  // First try Alpha Vantage (works for US stocks)
-  let priceData = await getStockPrice(symbol);
-  
-  // If Alpha Vantage fails, try Indian stock API
-  if (!priceData) {
-    priceData = await getIndianStockPrice(symbol);
+  if (!symbol || typeof symbol !== 'string') {
+    return null;
   }
-  
-  return priceData;
+
+  const raw = symbol.trim().toUpperCase();
+  if (!raw) return null;
+
+  // Build ordered list of candidate tickers for Yahoo Finance
+  const candidates = [];
+  if (raw.endsWith('.BSE')) {
+    const base = raw.replace(/\.BSE$/, '');
+    candidates.push(base + '.BO', base + '.NS', raw);
+  } else if (raw.endsWith('.BO') || raw.endsWith('.NS')) {
+    const base = raw.slice(0, -3);
+    const altSuffix = raw.endsWith('.NS') ? '.BO' : '.NS';
+    candidates.push(raw, base + altSuffix, base);
+  } else {
+    // No extension provided: Try NSE (.NS), BSE (.BO), then US/Global raw
+    candidates.push(raw + '.NS', raw + '.BO', raw);
+  }
+
+  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36';
+
+  // 1. Try Yahoo Finance v8 Chart API for each candidate ticker
+  for (const candidate of candidates) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(candidate)}?interval=1d&range=1d`;
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': userAgent,
+          'Accept': 'application/json, text/plain, */*'
+        },
+        timeout: 8000
+      });
+
+      const result = response.data?.chart?.result?.[0];
+      const meta = result?.meta;
+
+      if (meta && (typeof meta.regularMarketPrice === 'number' || typeof meta.chartPreviousClose === 'number' || typeof meta.previousClose === 'number')) {
+        const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? meta.previousClose;
+        const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
+        const change = price - prevClose;
+        const changePercent = prevClose !== 0 ? (change / prevClose) * 100 : 0;
+
+        console.log(`[stockPriceService] Successfully fetched price for '${symbol}' via candidate '${candidate}': ₹${price}`);
+
+        return {
+          price: parseFloat(price.toFixed(2)),
+          change: parseFloat(change.toFixed(2)),
+          changePercent: parseFloat(changePercent.toFixed(2)),
+          symbol: candidate,
+          originalSymbol: symbol,
+          currency: meta.currency || (candidate.endsWith('.NS') || candidate.endsWith('.BO') ? 'INR' : 'USD'),
+          exchange: meta.exchangeName || '',
+          lastUpdated: new Date()
+        };
+      }
+    } catch (err) {
+      // Ignore individual candidate failures and try next candidate
+    }
+  }
+
+  // 2. Backup: Yahoo Finance v10 Quote Summary API
+  for (const candidate of candidates) {
+    try {
+      const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(candidate)}?modules=price`;
+      const response = await axios.get(url, {
+        headers: { 'User-Agent': userAgent },
+        timeout: 8000
+      });
+
+      const priceObj = response.data?.quoteSummary?.result?.[0]?.price;
+      if (priceObj && typeof priceObj.regularMarketPrice?.raw === 'number') {
+        const price = priceObj.regularMarketPrice.raw;
+        const change = priceObj.regularMarketChange?.raw || 0;
+        const changePercent = (priceObj.regularMarketChangePercent?.raw || 0) * 100;
+
+        console.log(`[stockPriceService] Successfully fetched price via quoteSummary for '${candidate}': ₹${price}`);
+
+        return {
+          price: parseFloat(price.toFixed(2)),
+          change: parseFloat(change.toFixed(2)),
+          changePercent: parseFloat(changePercent.toFixed(2)),
+          symbol: candidate,
+          originalSymbol: symbol,
+          currency: priceObj.currency || 'INR',
+          lastUpdated: new Date()
+        };
+      }
+    } catch (err) {
+      // Continue
+    }
+  }
+
+  // 3. Fallback: Alpha Vantage API if user has process.env.ALPHA_VANTAGE_API_KEY
+  const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
+  if (apiKey) {
+    try {
+      const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(raw)}&apikey=${apiKey}`;
+      const response = await axios.get(avUrl, { timeout: 8000 });
+      const quote = response.data?.['Global Quote'];
+      if (quote && quote['05. price']) {
+        const price = parseFloat(quote['05. price']);
+        const change = parseFloat(quote['09. change'] || 0);
+        const changePercent = parseFloat((quote['10. change percent'] || '').replace('%', '') || 0);
+        return {
+          price: parseFloat(price.toFixed(2)),
+          change: parseFloat(change.toFixed(2)),
+          changePercent: parseFloat(changePercent.toFixed(2)),
+          symbol: raw,
+          originalSymbol: symbol,
+          currency: 'USD',
+          lastUpdated: new Date()
+        };
+      }
+    } catch (avErr) {
+      console.warn('[stockPriceService] Alpha Vantage fallback failed:', avErr.message);
+    }
+  }
+
+  console.error(`[stockPriceService] Failed to fetch stock price for symbol: '${symbol}' (tested candidates: ${candidates.join(', ')})`);
+  return null;
 };
+
+// Legacy exports for backwards compatibility
+const getStockPrice = async (symbol) => fetchStockPrice(symbol);
+const getIndianStockPrice = async (symbol) => fetchStockPrice(symbol);
 
 module.exports = {
   fetchStockPrice,

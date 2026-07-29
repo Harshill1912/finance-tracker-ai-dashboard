@@ -6,52 +6,8 @@ const auth = require('../authMiddleare');
 const { calculateCategoryAverages } = require('../utils/expenseUtils');
 const emailService = require('../utils/emailService');
 
-// Import AI helper - uses Cohere v2/chat API
-const callOpenAI = async (prompt, maxTokens = 500) => {
-  const axios = require('axios');
-  const apiKey = process.env.COHERE_API_KEY;
-  
-  if (!apiKey) {
-    console.error('No Cohere API key found');
-    return '';
-  }
-  
-  const models = ['command-a-03-2025', 'command-r7b-12-2024'];
-  
-  for (const model of models) {
-    try {
-      console.log(`[budgetRoutes] Calling Cohere v2/chat with model: ${model}`);
-      const response = await axios.post(
-        'https://api.cohere.com/v2/chat',
-        {
-          model: model,
-          messages: [
-            { role: 'system', content: 'You are a helpful financial advisor AI assistant. Provide clear, actionable, and personalized financial advice.' },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: maxTokens,
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000
-        }
-      );
-      const result = response.data?.message?.content?.[0]?.text?.trim() || '';
-      if (result) {
-        console.log(`[budgetRoutes] Cohere ${model} success!`);
-        return result;
-      }
-    } catch (error) {
-      console.error(`[budgetRoutes] Cohere ${model} error:`, error.response?.status, error.response?.data?.message || error.message);
-    }
-  }
-  
-  return '';
-};
+// Import AI helper
+const { callOpenAI } = require('../utils/aiHelper');
 
 const router = express.Router();
 

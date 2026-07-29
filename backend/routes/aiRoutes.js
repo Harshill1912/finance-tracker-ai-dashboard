@@ -7,58 +7,8 @@ const auth = require('../authMiddleare');
 
 const router = express.Router();
 
-// Helper function to call Cohere AI (v2/chat endpoint with command-a-03-2025)
-const callOpenAI = async (prompt, maxTokens = 500) => {
-  const apiKey = process.env.COHERE_API_KEY;
-  
-  if (!apiKey) {
-    console.error('No Cohere API key found');
-    return '';
-  }
-  
-  // Try with command-a-03-2025 first (best model), fallback to command-r7b-12-2024
-  const models = ['command-a-03-2025', 'command-r7b-12-2024'];
-  
-  for (const model of models) {
-    try {
-      console.log(`Calling Cohere v2/chat with model: ${model}`);
-      
-      const response = await axios.post(
-        'https://api.cohere.com/v2/chat',
-        {
-          model: model,
-          messages: [
-            { role: 'system', content: 'You are a helpful financial advisor AI assistant. Provide clear, actionable, and personalized financial advice.' },
-            { role: 'user', content: prompt }
-          ],
-          temperature: 0.7,
-          max_tokens: maxTokens,
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000
-        }
-      );
-
-      const result = response.data?.message?.content?.[0]?.text?.trim() || '';
-      
-      if (result) {
-        console.log(`Cohere ${model} success!`);
-        return result;
-      }
-      console.log(`Cohere ${model} returned empty, trying next model...`);
-    } catch (error) {
-      console.error(`Cohere ${model} error:`, error.response?.status, error.response?.data?.message || error.message);
-    }
-  }
-  
-  // All models failed - return empty string
-  console.error('All Cohere models failed');
-  return '';
-};
+// Import centralized AI helper
+const { callOpenAI } = require('../utils/aiHelper');
 
 // AI Auto-Detect Expense Category, Merchant, and Payment Method from Description
 router.post('/auto-detect-expense', auth, async (req, res) => {
@@ -719,12 +669,42 @@ router.post('/chat', auth, async (req, res) => {
     try {
       budgets = await Budget.find({ user: userId });
       expenses = await Expense.find({ user: userId }).sort({ date: -1 }).limit(100);
-      investments = await Investment.find({ userId: userId, isActive: true });
+      investments = await Investment.find({ $or: [{ userId: userId }, { user: userId }], isActive: { $ne: false } });
       goals = await Goal.find({ user: userId });
     } catch (dbError) {
       console.error('Database error fetching user data:', dbError);
       // Continue with empty arrays if DB fails
     }
+
+    // Calculate current month spending
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const currentMonthName = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    let thisMonthSpent = 0;
+    let thisMonthCount = 0;
+    const thisMonthCategorySpending = {};
+
+    (expenses || []).forEach(exp => {
+      if (exp?.date && exp?.amount) {
+        try {
+          const expDate = new Date(exp.date);
+          if (expDate.getMonth() === currentMonth && expDate.getFullYear() === currentYear) {
+            thisMonthSpent += exp.amount;
+            thisMonthCount += 1;
+            if (exp.category) {
+              thisMonthCategorySpending[exp.category] = (thisMonthCategorySpending[exp.category] || 0) + exp.amount;
+            }
+          }
+        } catch (e) {}
+      }
+    });
+
+    const thisMonthCategoryBreakdown = Object.entries(thisMonthCategorySpending)
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, amt]) => `${cat}: ₹${amt.toLocaleString()}`)
+      .join(', ');
 
     // Calculate comprehensive statistics with safe defaults
     const totalBudget = (budgets || []).reduce((sum, b) => sum + (b?.amount || 0), 0);
@@ -732,7 +712,7 @@ router.post('/chat', auth, async (req, res) => {
     const totalExpenses = (expenses || []).reduce((sum, e) => sum + (e?.amount || 0), 0);
     const balance = totalBudget - totalSpent;
 
-    // Category breakdown
+    // Category breakdown across all loaded expenses
     const categorySpending = {};
     (expenses || []).forEach(exp => {
       if (exp?.category && exp?.amount) {
@@ -752,9 +732,7 @@ router.post('/chat', auth, async (req, res) => {
         try {
           const monthKey = new Date(exp.date).toLocaleString('default', { month: 'long', year: 'numeric' });
           monthlySpending[monthKey] = (monthlySpending[monthKey] || 0) + exp.amount;
-        } catch (e) {
-          // Skip invalid dates
-        }
+        } catch (e) {}
       }
     });
     const monthlyBreakdown = Object.entries(monthlySpending)
@@ -801,17 +779,21 @@ router.post('/chat', auth, async (req, res) => {
 
 USER'S COMPREHENSIVE FINANCIAL DATA:
 
-BUDGETS:
+CURRENT MONTH (${currentMonthName}):
+- Spent this month: ₹${thisMonthSpent.toLocaleString()} across ${thisMonthCount} transaction(s)
+- Current Month Category Breakdown: ${thisMonthCategoryBreakdown || 'No expenses recorded for this month yet'}
+
+OVERALL BUDGETS:
 - Total Budget: ₹${totalBudget.toLocaleString()}
 - Total Spent: ₹${totalSpent.toLocaleString()}
 - Remaining Budget: ₹${balance.toLocaleString()}
 - Budget Status by Category: ${budgetStatus || 'No budgets set'}
 
-EXPENSES:
-- Total Expenses: ₹${totalExpenses.toLocaleString()}
-- Number of Transactions: ${expenses.length}
+EXPENSES HISTORY:
+- Total All-Time Expenses: ₹${totalExpenses.toLocaleString()}
+- Total Loaded Transactions: ${expenses.length}
 - Top Spending Categories: ${topCategories || 'No expenses yet'}
-- Monthly Spending Trend (Last 3 months): ${monthlyBreakdown || 'No data'}
+- Monthly Spending Trend: ${monthlyBreakdown || 'No data'}
 - Recent Expenses: ${recentExpenses || 'No recent expenses'}
 
 INVESTMENTS:
@@ -826,14 +808,11 @@ FINANCIAL GOALS:
 - Goals Progress: ${goalsProgress || 'No goals set'}
 
 INSTRUCTIONS:
-1. Answer the user's question using their actual financial data provided above
-2. Be specific and reference actual numbers from their data when relevant
-3. Provide actionable, personalized advice based on their spending patterns
-4. If they ask about something not in the data, acknowledge it and provide general guidance
-5. Be encouraging and supportive
-6. Use Indian Rupee (₹) format for all amounts
-7. Keep responses concise but informative (2-4 paragraphs max)
-8. If data is missing, suggest they add it for better insights
+1. Answer the user's question directly and accurately using their actual financial data above.
+2. If they ask "How much did I spend this month?", state clearly: "In ${currentMonthName}, you have spent ₹${thisMonthSpent.toLocaleString()} across ${thisMonthCount} transaction(s)." and provide the breakdown by category if available.
+3. Be specific, referencing exact numbers and figures from their data.
+4. Use Indian Rupee (₹) format for all amounts.
+5. Keep responses clean, organized, and friendly (use markdown bullet points and bolding for key numbers).
 
 User Question: "${question}"
 
@@ -844,57 +823,48 @@ Provide a helpful, personalized response:`;
       const responseText = await callOpenAI(contextPrompt, 800);
       
       if (!responseText || !responseText.trim()) {
-        console.log('Empty response from AI, using fallback');
-        // Use fallback instead of throwing
-        const fallbackResponse = `I apologize, but I'm having trouble accessing the AI service right now. 
-
-Based on your data:
-- Total Budget: ₹${totalBudget.toLocaleString()}
-- Total Spent: ₹${totalSpent.toLocaleString()}
-- Remaining: ₹${balance.toLocaleString()}
-${goals.length > 0 ? `- You have ${goals.length} active goal${goals.length > 1 ? 's' : ''}` : ''}
-${investments.length > 0 ? `- Your investment portfolio is worth ₹${totalCurrentValue.toLocaleString()}` : ''}
-${topCategories ? `- Top spending categories: ${topCategories}` : ''}
-
-Please try again in a moment, or check your API configuration.`;
+        console.log('Empty response from AI, constructing fallback');
         
-        return res.json({ 
-          response: fallbackResponse
-        });
+        let fallbackResponse = `Here is a summary based on your financial data:\n\n`;
+        fallbackResponse += `• **This Month (${currentMonthName}) Spending:** ₹${thisMonthSpent.toLocaleString()} (${thisMonthCount} transactions)\n`;
+        if (thisMonthCategoryBreakdown) {
+          fallbackResponse += `  - Breakdown: ${thisMonthCategoryBreakdown}\n`;
+        }
+        fallbackResponse += `• **Total Budget:** ₹${totalBudget.toLocaleString()} | **Spent:** ₹${totalSpent.toLocaleString()} | **Remaining:** ₹${balance.toLocaleString()}\n`;
+        if (topCategories) {
+          fallbackResponse += `• **Top Categories:** ${topCategories}\n`;
+        }
+        if (investments.length > 0) {
+          fallbackResponse += `• **Investment Portfolio Value:** ₹${totalCurrentValue.toLocaleString()} (Returns: ₹${investmentReturns.toLocaleString()})\n`;
+        }
+        if (goals.length > 0) {
+          fallbackResponse += `• **Savings Goals:** Saved ₹${totalSaved.toLocaleString()} of ₹${totalGoalAmount.toLocaleString()}\n`;
+        }
+        
+        return res.json({ response: fallbackResponse });
       }
       
       console.log('AI response received, length:', responseText.length);
       res.json({ response: responseText });
     } catch (error) {
       console.error('AI API error in chat endpoint:', error.response?.data || error.message);
-      console.error('Error stack:', error.stack);
       
-      // Provide fallback response with user's actual data
-      // Return 200 status so frontend doesn't show error
-      const fallbackResponse = `I apologize, but I'm having trouble accessing the AI service right now. 
-
-Based on your data:
-- Total Budget: ₹${totalBudget.toLocaleString()}
-- Total Spent: ₹${totalSpent.toLocaleString()}
-- Remaining: ₹${balance.toLocaleString()}
-${goals.length > 0 ? `- You have ${goals.length} active goal${goals.length > 1 ? 's' : ''}` : ''}
-${investments.length > 0 ? `- Your investment portfolio is worth ₹${totalCurrentValue.toLocaleString()}` : ''}
-${topCategories ? `- Top spending categories: ${topCategories}` : ''}
-
-Please try again in a moment, or check your API configuration.`;
+      let fallbackResponse = `Here is your current financial summary:\n\n`;
+      fallbackResponse += `• **This Month (${currentMonthName}) Spending:** ₹${thisMonthSpent.toLocaleString()} across ${thisMonthCount} transaction(s)\n`;
+      if (thisMonthCategoryBreakdown) {
+        fallbackResponse += `  - Breakdown: ${thisMonthCategoryBreakdown}\n`;
+      }
+      fallbackResponse += `• **Total Budget:** ₹${totalBudget.toLocaleString()} | **Spent:** ₹${totalSpent.toLocaleString()} | **Remaining:** ₹${balance.toLocaleString()}\n`;
+      if (topCategories) {
+        fallbackResponse += `• **Top Spending Categories:** ${topCategories}\n`;
+      }
       
-      // Return 200 with fallback instead of 500
-      res.json({ 
-        response: fallbackResponse
-      });
+      res.json({ response: fallbackResponse });
     }
   } catch (error) {
     console.error('AI chat error (outer catch):', error);
-    console.error('Error stack:', error.stack);
-    
-    // Return 200 with helpful message instead of 500
     res.json({ 
-      response: `I encountered an error processing your request: ${error.message}. Please try again later or contact support if the issue persists.`
+      response: `Sorry, I encountered an issue retrieving your data: ${error.message}. Please try again.`
     });
   }
 });
