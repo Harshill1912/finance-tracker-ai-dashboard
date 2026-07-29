@@ -67,13 +67,6 @@ const Home = () => {
     }
   ];
 
-  const stats = [
-    { value: "10K+", label: "Active Users" },
-    { value: "₹50M+", label: "Tracked Expenses" },
-    { value: "4.9/5", label: "User Rating" },
-    { value: "99.9%", label: "Uptime" }
-  ];
-
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900">
       <Navbar />
@@ -83,13 +76,13 @@ const Home = () => {
         <div className="absolute inset-0 bg-grid-slate-100/[0.05] bg-[size:20px_20px]" />
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="max-w-7xl mx-auto">
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              {/* Left Content */}
+            <div className="max-w-3xl mx-auto">
+              {/* Hero Content */}
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8 }}
-                className="text-center lg:text-left"
+                className="text-center"
               >
                 <motion.div
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -113,7 +106,7 @@ const Home = () => {
                   Start your journey to financial freedom today.
                 </p>
 
-                <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-8">
+                <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
                   <Link to="/signup">
                     <Button size="lg" className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-8 py-6 text-lg shadow-lg hover:shadow-xl transition-all">
                       Get Started Free
@@ -128,7 +121,7 @@ const Home = () => {
                 </div>
 
                 {/* Trust Badges */}
-                <div className="flex flex-wrap items-center gap-6 justify-center lg:justify-start text-sm text-gray-500 dark:text-gray-400">
+                <div className="flex flex-wrap items-center gap-6 justify-center text-sm text-gray-500 dark:text-gray-400">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-5 w-5 text-green-500" />
                     <span>Free Forever</span>
@@ -140,35 +133,6 @@ const Home = () => {
                   <div className="flex items-center gap-2">
                     <Globe className="h-5 w-5 text-purple-500" />
                     <span>No Credit Card</span>
-                  </div>
-                </div>
-              </motion.div>
-
-              {/* Right Content - Illustration/Stats */}
-              <motion.div
-                initial={{ opacity: 0, x: 30 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3, duration: 0.8 }}
-                className="relative"
-              >
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 border border-gray-200 dark:border-gray-700">
-                  <div className="grid grid-cols-2 gap-4">
-                    {stats.map((stat, index) => (
-                      <motion.div
-                        key={index}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.5 + index * 0.1 }}
-                        className="text-center p-4 bg-gradient-to-br from-purple-50 to-blue-50 dark:from-gray-700 dark:to-gray-800 rounded-xl"
-                      >
-                        <div className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                          {stat.value}
-                        </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                          {stat.label}
-                        </div>
-                      </motion.div>
-                    ))}
                   </div>
                 </div>
               </motion.div>

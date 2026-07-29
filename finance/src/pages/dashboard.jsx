@@ -65,7 +65,7 @@ const sidebarOptions = [
   { name: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
   { name: "Expenses", icon: Receipt, path: "/expenses" },
   { name: "Budgets", icon: Wallet, path: "/budgets" },
-  { name: "Reports", icon: BarChart, path: "/report" },
+  { name: "Reports", icon: BarChartIcon, path: "/report" },
   { name: "Investment Tracker", icon: SaveAll, path: '/investments' },
   { name: "Split Expenses", icon: SplitIcon, path: "/split" },
   { name: "Goals", icon: Target, path: "/goals" },
