@@ -38,7 +38,7 @@ console.error = (...args) => {
 // VITE_GOOGLE_CLIENT_ID build env var was not set (e.g. Vercel). Mirrors the
 // VITE_API_URL fallback used elsewhere. The real access control is the
 // "Authorized JavaScript origins" list on the OAuth client in Google Cloud.
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '557173934310-nfmuglfc61d6e46f1f6imut28nfslq2i.apps.googleusercontent.com'
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '1016673639934-o2ql49egbqq77vgavo6lh6r5pgfgril4.apps.googleusercontent.com'
 
 // Wrap App with GoogleOAuthProvider only if client ID exists
 const AppWithProviders = () => {

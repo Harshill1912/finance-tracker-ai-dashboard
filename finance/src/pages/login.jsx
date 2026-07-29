@@ -188,7 +188,7 @@ const Login = () => {
 
   // Public client ID (safe to hardcode) so the Google button renders even when
   // VITE_GOOGLE_CLIENT_ID is not set at build time (e.g. on Vercel).
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '557173934310-nfmuglfc61d6e46f1f6imut28nfslq2i.apps.googleusercontent.com';
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '1016673639934-o2ql49egbqq77vgavo6lh6r5pgfgril4.apps.googleusercontent.com';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
