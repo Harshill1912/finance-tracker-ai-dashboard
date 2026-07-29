@@ -9,8 +9,9 @@ const { getGoldPrice } = require('../utils/goldPriceService');
 // Get all investments for a user
 router.get('/', auth, async (req, res) => {
   try {
+    const userId = req.user.id || req.user._id;
     const investments = await Investment.find({ 
-      userId: req.user.id,
+      $or: [{ userId: userId }, { user: userId }],
       isActive: true 
     }).sort({ purchaseDate: -1 });
 
@@ -25,10 +26,10 @@ router.get('/', auth, async (req, res) => {
 // Update single investment price (must be before /:id route)
 router.post('/:id/update-price', auth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.id || req.user._id;
     const investment = await Investment.findOne({ 
       _id: req.params.id, 
-      userId, 
+      $or: [{ userId: userId }, { user: userId }], 
       isActive: true 
     });
 
@@ -550,9 +551,10 @@ router.post('/:id/update-price', auth, async (req, res) => {
 // Get single investment
 router.get('/:id', auth, async (req, res) => {
   try {
+    const userId = req.user.id || req.user._id;
     const investment = await Investment.findOne({
       _id: req.params.id,
-      userId: req.user.id
+      $or: [{ userId: userId }, { user: userId }]
     });
 
     if (!investment) {
@@ -823,9 +825,10 @@ router.post('/', auth, async (req, res) => {
 // Update investment
 router.put('/:id', auth, async (req, res) => {
   try {
+    const userId = req.user.id || req.user._id;
     const investment = await Investment.findOne({
       _id: req.params.id,
-      userId: req.user.id
+      $or: [{ userId: userId }, { user: userId }]
     });
 
     if (!investment) {
@@ -873,9 +876,10 @@ router.put('/:id', auth, async (req, res) => {
 // Delete investment (soft delete)
 router.delete('/:id', auth, async (req, res) => {
   try {
+    const userId = req.user.id || req.user._id;
     const investment = await Investment.findOne({
       _id: req.params.id,
-      userId: req.user.id
+      $or: [{ userId: userId }, { user: userId }]
     });
 
     if (!investment) {
@@ -895,8 +899,9 @@ router.delete('/:id', auth, async (req, res) => {
 // Get portfolio dashboard data
 router.get('/dashboard/summary', auth, async (req, res) => {
   try {
+    const userId = req.user.id || req.user._id;
     const investments = await Investment.find({
-      userId: req.user.id,
+      $or: [{ userId: userId }, { user: userId }],
       isActive: true
     });
 
@@ -949,8 +954,9 @@ router.get('/dashboard/summary', auth, async (req, res) => {
 // Get portfolio analysis (asset allocation)
 router.get('/dashboard/analysis', auth, async (req, res) => {
   try {
+    const userId = req.user.id || req.user._id;
     const investments = await Investment.find({
-      userId: req.user.id,
+      $or: [{ userId: userId }, { user: userId }],
       isActive: true
     });
 
@@ -1000,8 +1006,9 @@ router.get('/summary/yearly/:year', auth, async (req, res) => {
     const startDate = new Date(year, 0, 1);
     const endDate = new Date(year, 11, 31, 23, 59, 59);
 
+    const userId = req.user.id || req.user._id;
     const investments = await Investment.find({
-      userId: req.user.id,
+      $or: [{ userId: userId }, { user: userId }],
       isActive: true,
       purchaseDate: { $gte: startDate, $lte: endDate }
     });
@@ -1081,9 +1088,9 @@ router.get('/summary/yearly/:year', auth, async (req, res) => {
 // Update current prices for all investments
 router.post('/update-prices', auth, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user.id || req.user._id;
     const investments = await Investment.find({
-      userId: userId,
+      $or: [{ userId: userId }, { user: userId }],
       isActive: true
     });
 
