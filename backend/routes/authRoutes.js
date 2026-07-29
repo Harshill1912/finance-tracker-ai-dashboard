@@ -1,9 +1,14 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/user');
 const invitationService = require('../utils/groupInvitationService');
 const router = express.Router();
+
+// Used to verify Google ID token signatures against Google's public keys.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Login Route
 router.post('/login', async (req, res) => {
@@ -218,23 +223,54 @@ router.post('/google', async (req, res) => {
   }
 
   try {
-    // Verify Google token (in production, verify with Google's API)
-    // For now, we'll decode the JWT token from Google
-    let decoded;
-    
-    try {
-      // Google tokens are signed, but for MVP we can decode without verification
-      // In production, verify with Google's public keys
-      decoded = jwt.decode(credential);
-    } catch (err) {
-      return res.status(400).json({ message: 'Invalid Google token' });
+    // Check if JWT_SECRET is set
+    if (!process.env.JWT_SECRET) {
+      console.error('JWT_SECRET is not set in environment variables');
+      return res.status(500).json({ message: 'Server configuration error. JWT_SECRET missing.' });
     }
 
-    if (!decoded || !decoded.email) {
+    // Verify the token against Google's public keys BEFORE touching the
+    // database, so unauthenticated callers cannot probe infrastructure state.
+    //
+    // This previously used jwt.decode(), which parses the payload WITHOUT
+    // checking the signature. Any client could forge a token for an arbitrary
+    // email and receive a valid session for that account. verifyIdToken checks
+    // the signature, issuer, audience and expiry.
+    if (!GOOGLE_CLIENT_ID) {
+      console.error('GOOGLE_CLIENT_ID is not set - cannot verify Google tokens');
+      return res.status(500).json({ message: 'Server configuration error. GOOGLE_CLIENT_ID missing.' });
+    }
+
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: GOOGLE_CLIENT_ID,
+      });
+      payload = ticket.getPayload();
+    } catch (err) {
+      console.error('Google token verification failed:', err.message);
+      return res.status(401).json({ message: 'Invalid or expired Google token.' });
+    }
+
+    if (!payload || !payload.email) {
       return res.status(400).json({ message: 'Invalid token data' });
     }
 
-    const { email, name, picture, sub: googleId } = decoded;
+    // Google sets email_verified on the ID token; refuse unverified addresses so
+    // an account cannot be claimed via an address the holder has not proven.
+    if (payload.email_verified === false) {
+      return res.status(403).json({ message: 'Your Google email address is not verified.' });
+    }
+
+    // Check MongoDB connection. Without this the User queries below throw a
+    // buffering timeout that surfaces as a generic 500, hiding the real cause.
+    const mongoose = require('mongoose');
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({ message: 'Database not connected. Please check MongoDB connection.' });
+    }
+
+    const { email, name, picture, sub: googleId } = payload;
 
     // Find or create user
     let user = await User.findOne({ email });
